@@ -1,0 +1,29 @@
+{
+  "organization": "${AZURE_ORG}",
+  "project": "${AZURE_PROJECT}",
+  "pat": "${AZURE_PAT}",
+
+  "repositories": [
+    {
+      "name": "nome-do-repositorio-no-azure",
+      "module": "NomeDoModulo",
+      "entryPoints": ["src/pages", "src/components"]
+    }
+  ],
+
+  "template": {
+    "language": "pt-BR",
+    "prefix": "CT",
+    "fields": ["precondition", "steps", "expectedResult", "type"]
+  },
+
+  "platformContext": {
+    "description": "Descreva aqui o tipo da sua aplicação",
+    "stack": ["React", "TypeScript"],
+    "apiResponses": ["200", "201", "204", "400", "500"]
+  },
+
+  "options": {
+    "autoPostToAzure": false
+  }
+}

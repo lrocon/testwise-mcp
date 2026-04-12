@@ -1,0 +1,24 @@
+{
+  "name": "testwise",
+  "version": "1.0.0",
+  "description": "MCP server para geração automatizada de casos de teste QA a partir de work items do Azure DevOps",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts"
+  },
+  "keywords": ["mcp", "qa", "azure-devops", "test-cases"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
