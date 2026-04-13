@@ -1,4 +1,5 @@
 import type { Config, WorkItem, RepoContext } from '../types.js';
+import { SYSTEM_IDENTITY } from './system.js';
 
 /** URL web do repositório: https://dev.azure.com/{org}/{project}/_git/{repo} */
 function repoGitWebUrl(config: Config, repoName: string): string {
@@ -57,7 +58,11 @@ export function buildUserPrompt(workItem: WorkItem, repoContexts: RepoContext[],
 
   const reposSection = buildAnalyzedReposSection(repoContexts, config);
 
-  return `# Work Item #${workItem.id} — ${workItem.title}
+  return `${SYSTEM_IDENTITY}
+
+---
+
+# Work Item #${workItem.id} — ${workItem.title}
 
 **Tipo:** ${workItem.type}
 **Estado:** ${workItem.state}
