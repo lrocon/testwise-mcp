@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "ping": "tsx scripts/ping.ts",
     "start": "tsx src/index.ts",
     "build": "tsc",
     "dev": "tsx watch src/index.ts"

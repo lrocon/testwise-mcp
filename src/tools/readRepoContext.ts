@@ -1,7 +1,8 @@
 import { extname } from 'path';
 import type { Config, RepoContext, RepoFile } from '../types.js';
 
-const SUPPORTED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.css']);
+/** Extensões consideradas ao varrer o repositório inteiro (texto / código). */
+const SUPPORTED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.css', '.json']);
 const MAX_FILE_SIZE_BYTES = 100 * 1024; // 100KB por arquivo
 const CONCURRENCY = 5;
 
@@ -30,18 +31,14 @@ async function getRepoId(repoName: string, config: Config): Promise<string> {
   return data.id;
 }
 
-async function listFilesInPath(
-  repoId: string,
-  scopePath: string,
-  config: Config,
-): Promise<AzureItem[]> {
+/** Lista todos os itens da árvore Git (equivalente a analisar o repo completo). */
+async function listAllFiles(repoId: string, config: Config): Promise<AzureItem[]> {
   const { organization, project, pat } = config;
-  const normalizedPath = scopePath.startsWith('/') ? scopePath : `/${scopePath}`;
-  const url = `${organization}/${project}/_apis/git/repositories/${repoId}/items?scopePath=${encodeURIComponent(normalizedPath)}&recursionLevel=Full&api-version=7.1`;
+  const url = `${organization}/${project}/_apis/git/repositories/${repoId}/items?recursionLevel=Full&api-version=7.1`;
   const response = await fetch(url, {
     headers: { Authorization: basicAuth(pat), Accept: 'application/json' },
   });
-  if (!response.ok) return []; // entry point pode não existir neste repo
+  if (!response.ok) return [];
   const data = (await response.json()) as { value: AzureItem[] };
   return data.value ?? [];
 }
@@ -76,15 +73,19 @@ async function fetchBatch(
   return results;
 }
 
-export async function readRepoContext(moduleName: string, config: Config): Promise<RepoContext[]> {
+/**
+ * Carrega contexto de código do repositório Git no Azure DevOps
+ * (`…/project/_git/<nome>`), percorrendo todos os arquivos suportados na árvore.
+ */
+export async function readRepoContext(repositoryName: string, config: Config): Promise<RepoContext[]> {
   const matchingRepos = config.repositories.filter(
-    repo => repo.module.toLowerCase() === moduleName.toLowerCase(),
+    repo => repo.name.toLowerCase() === repositoryName.toLowerCase(),
   );
 
   if (matchingRepos.length === 0) {
-    const available = config.repositories.map(r => r.module).join(', ');
+    const available = config.repositories.map(r => r.name).join(', ');
     throw new Error(
-      `Módulo '${moduleName}' não encontrado na configuração. Módulos disponíveis: ${available}`,
+      `Repositório '${repositoryName}' não encontrado na configuração. Repositórios configurados: ${available}`,
     );
   }
 
@@ -92,21 +93,15 @@ export async function readRepoContext(moduleName: string, config: Config): Promi
 
   for (const repo of matchingRepos) {
     const repoId = await getRepoId(repo.name, config);
-    const allFiles: RepoFile[] = [];
+    const items = await listAllFiles(repoId, config);
+    const filePaths = items
+      .filter(item => item.gitObjectType === 'blob')
+      .filter(item => SUPPORTED_EXTENSIONS.has(extname(item.path).toLowerCase()))
+      .filter(item => !item.size || item.size <= MAX_FILE_SIZE_BYTES)
+      .map(item => item.path);
 
-    for (const entryPoint of repo.entryPoints) {
-      const items = await listFilesInPath(repoId, entryPoint, config);
-      const filePaths = items
-        .filter(item => item.gitObjectType === 'blob')
-        .filter(item => SUPPORTED_EXTENSIONS.has(extname(item.path).toLowerCase()))
-        .filter(item => !item.size || item.size <= MAX_FILE_SIZE_BYTES)
-        .map(item => item.path);
-
-      const files = await fetchBatch(repoId, filePaths, config);
-      allFiles.push(...files);
-    }
-
-    results.push({ name: repo.name, module: repo.module, files: allFiles });
+    const files = await fetchBatch(repoId, filePaths, config);
+    results.push({ name: repo.name, files });
   }
 
   return results;

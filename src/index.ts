@@ -2,13 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { loadConfig } from './config.js';
+import { formatPingMessage } from './pingMessage.js';
 import { fetchWorkItem } from './tools/fetchWorkItem.js';
 import { listSprintItems } from './tools/listSprintItems.js';
 import { readRepoContext } from './tools/readRepoContext.js';
 import { searchRepoByKeyword } from './tools/searchRepoByKeyword.js';
 import { buildUserPrompt } from './prompts/user.js';
 import { exportToMarkdown } from './tools/exportToMarkdown.js';
-import { postToWorkItem } from './tools/postToWorkItem.js';
+import { postToWorkItem, createTestTasks } from './tools/postToWorkItem.js';
 
 const config = loadConfig();
 
@@ -21,22 +22,22 @@ const server = new McpServer({
 
 server.tool(
   'ping',
-  'Verifica se o Spectr MCP está ativo e a configuração foi carregada corretamente',
+  'Verifica se o Testwise MCP está ativo e a configuração foi carregada corretamente',
   {},
   async () => ({
     content: [
       {
         type: 'text',
-        text: `Spectr MCP ativo ✓\nOrganização: ${config.organization}\nProjeto: ${config.project}\nRepositórios configurados: ${config.repositories.length}`,
+        text: formatPingMessage(config),
       },
     ],
   }),
 );
 
-// ─── fetch_work_item ──────────────────────────────────────────────────────────
+// ─── item ─────────────────────────────────────────────────────────────────────
 
 server.tool(
-  'fetch_work_item',
+  'item',
   'Busca um work item no Azure DevOps pelo ID (PBI, Story, Bug, Melhoria)',
   { id: z.number().describe('ID do work item no Azure DevOps') },
   async ({ id }) => {
@@ -52,10 +53,10 @@ server.tool(
   },
 );
 
-// ─── list_sprint_items ────────────────────────────────────────────────────────
+// ─── sprint ───────────────────────────────────────────────────────────────────
 
 server.tool(
-  'list_sprint_items',
+  'sprint',
   'Lista todos os work items do sprint atual ou de um sprint específico',
   {
     sprint: z
@@ -84,22 +85,26 @@ server.tool(
   },
 );
 
-// ─── read_repo_context ────────────────────────────────────────────────────────
+// ─── repo ─────────────────────────────────────────────────────────────────────
 
 server.tool(
-  'read_repo_context',
-  'Lê os arquivos dos repositórios configurados para um módulo específico',
-  { module: z.string().describe('Nome do módulo conforme definido em testwise.config.json') },
-  async ({ module }) => {
+  'repo',
+  'Lê todos os arquivos de código suportados de um repositório Git no Azure (nome igual ao de dev.azure.com/.../_git/<nome>)',
+  {
+    repository: z
+      .string()
+      .describe('Nome do repositório no Azure DevOps (mesmo valor em testwise.config.json e na URL _git/...)'),
+  },
+  async ({ repository }) => {
     try {
-      const contexts = await readRepoContext(module, config);
+      const contexts = await readRepoContext(repository, config);
       const totalFiles = contexts.reduce((acc, ctx) => acc + ctx.files.length, 0);
       const summary = contexts.map(ctx => `• ${ctx.name} — ${ctx.files.length} arquivo(s)`).join('\n');
       return {
         content: [
           {
             type: 'text',
-            text: `Módulo "${module}" — ${totalFiles} arquivo(s) carregado(s):\n${summary}\n\n${JSON.stringify(contexts, null, 2)}`,
+            text: `Repositório "${repository}" — ${totalFiles} arquivo(s) carregado(s):\n${summary}\n\n${JSON.stringify(contexts, null, 2)}`,
           },
         ],
       };
@@ -112,10 +117,10 @@ server.tool(
   },
 );
 
-// ─── search_repo_by_keyword ───────────────────────────────────────────────────
+// ─── search ───────────────────────────────────────────────────────────────────
 
 server.tool(
-  'search_repo_by_keyword',
+  'search',
   'Busca por uma palavra-chave nos arquivos de todos os repositórios configurados',
   { keyword: z.string().describe('Palavra-chave a buscar nos repositórios') },
   async ({ keyword }) => {
@@ -136,33 +141,35 @@ server.tool(
   },
 );
 
-// ─── generate_test_cases ──────────────────────────────────────────────────────
+// ─── gen ──────────────────────────────────────────────────────────────────────
 
 server.tool(
-  'generate_test_cases',
-  'Busca o work item e o contexto de código do repositório para que você gere os casos de teste',
+  'gen',
+  'Monta o prompt com work item + código do repositório para gerar casos de teste',
   {
     workItemId: z.number().describe('ID do work item no Azure DevOps'),
-    module: z
+    repository: z
       .string()
       .optional()
-      .describe('Nome do módulo conforme definido em testwise.config.json (opcional)'),
+      .describe(
+        'Nome do repositório Git no Azure (opcional; mesmo nome em testwise.config.json e em .../_git/<nome>)',
+      ),
   },
-  async ({ workItemId, module }) => {
+  async ({ workItemId, repository }) => {
     try {
       const workItem = await fetchWorkItem(workItemId, config);
 
       let repoContexts: Awaited<ReturnType<typeof readRepoContext>> = [];
-      if (module) {
+      if (repository) {
         try {
-          repoContexts = await readRepoContext(module, config);
+          repoContexts = await readRepoContext(repository, config);
         } catch {
-          // Continua sem contexto de código se o módulo não for encontrado
+          // Continua sem contexto de código se o repositório não for encontrado
         }
       }
 
       return {
-        content: [{ type: 'text', text: buildUserPrompt(workItem, repoContexts) }],
+        content: [{ type: 'text', text: buildUserPrompt(workItem, repoContexts, config) }],
       };
     } catch (err) {
       return {
@@ -173,10 +180,10 @@ server.tool(
   },
 );
 
-// ─── export_to_markdown ───────────────────────────────────────────────────────
+// ─── save ─────────────────────────────────────────────────────────────────────
 
 server.tool(
-  'export_to_markdown',
+  'save',
   'Salva os casos de teste gerados como arquivo Markdown no disco',
   {
     workItemId: z.number().describe('ID do work item (usado no nome do arquivo)'),
@@ -198,17 +205,35 @@ server.tool(
   },
 );
 
-// ─── post_to_work_item ────────────────────────────────────────────────────────
+// ─── post ─────────────────────────────────────────────────────────────────────
 
 server.tool(
-  'post_to_work_item',
-  'Posta os casos de teste como comentário no work item do Azure DevOps',
+  'post',
+  'Posta os casos de teste no Azure DevOps: como comentário no work item (padrão) ou como Tasks filhas (uma por caso de teste)',
   {
     workItemId: z.number().describe('ID do work item no Azure DevOps'),
-    content: z.string().describe('Conteúdo dos casos de teste a postar como comentário'),
+    content: z.string().describe('Conteúdo dos casos de teste a postar'),
+    mode: z
+      .enum(['comment', 'tasks'])
+      .optional()
+      .default('comment')
+      .describe('"comment" posta tudo como um comentário (padrão); "tasks" cria uma Task filha para cada caso de teste'),
   },
-  async ({ workItemId, content }) => {
+  async ({ workItemId, content, mode }) => {
     try {
+      if (mode === 'tasks') {
+        const result = await createTestTasks(workItemId, content, config);
+        const urlList = result.urls.map((u, i) => `${i + 1}. ${u}`).join('\n');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `${result.created} Task(s) criada(s) como filhas do work item #${workItemId}:\n\n${urlList}`,
+            },
+          ],
+        };
+      }
+
       const url = await postToWorkItem(workItemId, content, config);
       return {
         content: [{ type: 'text', text: `Comentário postado com sucesso. URL: ${url}` }],

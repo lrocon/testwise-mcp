@@ -19,7 +19,6 @@ export interface RepoFile {
 
 export interface RepoContext {
   name: string;
-  module: string;
   files: RepoFile[];
 }
 
@@ -33,10 +32,9 @@ export interface ParsedTestCase {
   raw: string;
 }
 
+/** Nome do repositório Git no Azure DevOps (segmento após `/_git/` na URL). */
 export interface RepositoryConfig {
   name: string;
-  module: string;
-  entryPoints: string[];
 }
 
 export interface Config {
@@ -56,6 +54,6 @@ export interface Config {
   };
   options: {
     autoPostToAzure: boolean;
-    saveHistory: boolean;
+    saveHistory?: boolean;
   };
 }

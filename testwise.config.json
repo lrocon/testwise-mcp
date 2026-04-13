@@ -4,11 +4,7 @@
   "pat": "${AZURE_PAT}",
 
   "repositories": [
-    {
-      "name": "nome-do-repositorio-no-azure",
-      "module": "NomeDoModulo",
-      "entryPoints": ["src/pages", "src/components"]
-    }
+    { "name": "meu-repositorio-azure" }
   ],
 
   "template": {
