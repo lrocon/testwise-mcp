@@ -1,36 +1,28 @@
 # Testwise MCP
 
-Servidor [MCP](https://modelcontextprotocol.io/) que automatiza a criação de casos de teste de QA a partir de work items do Azure DevOps: lê repositórios Git via API e monta contexto para gerar CTs com IA.
-
-> **Dica:** no Cursor/VS Code, use o **Preview de Markdown** (ícone ou `Ctrl+Shift+V` no Windows) para ver títulos, tabelas e blocos de código formatados. Abrir só o texto pode mostrar `#` e `` ` `` crus.
+Servidor [MCP](https://modelcontextprotocol.io/) que automatiza a criação de casos de teste de QA a partir de work items do Azure DevOps.
 
 ## Como funciona
 
-1. Você informa o ID do work item (e opcionalmente o nome do repositório Git no Azure).
-2. O Testwise busca o item no Azure DevOps.
-3. Lê os arquivos do(s) repositório(s) configurados (Azure Repos API, árvore do repo).
-4. Monta o prompt com descrição, critérios de aceite e código.
-5. A IA gera os casos de teste no padrão configurado (ex.: CT-XX).
+1. Informe o ID do work item (e opcionalmente o nome do repositório Git).
+2. O Testwise busca o item e lê o código no Azure Repos.
+3. Monta o prompt e a IA gera os casos de teste no padrão configurado.
 
 ## Pré-requisitos
 
-- [Node.js 18+](https://nodejs.org/)
-- Conta no [Azure DevOps](https://dev.azure.com/) com acesso ao projeto
-- Cliente MCP ([Cursor](https://cursor.com/), [Claude Desktop](https://claude.ai/download), etc.)
+- Node.js 18+
+- Conta no Azure DevOps com acesso ao projeto
+- Cliente MCP (Cursor, Claude Desktop, Claude Code, etc.)
 
 ## Instalação
 
-### 1. Clonar e instalar
-
 ```bash
-git clone https://github.com/seu-usuario/testwise-mcp.git
+git clone https://github.com/lrocon/testwise-mcp.git
 cd testwise-mcp
 npm install
 ```
 
-### 2. Variáveis de ambiente
-
-Crie um `.env` na raiz (pode usar `.env.example` como base):
+Crie um `.env` na raiz:
 
 ```env
 AZURE_PAT=seu_token
@@ -38,11 +30,9 @@ AZURE_ORG=https://dev.azure.com/sua-organizacao
 AZURE_PROJECT=Nome-Do-Projeto
 ```
 
-Geração do PAT: **User Settings → Personal Access Tokens → New Token**. Escopos típicos: **Work Items (Read)** e **Code (Read)**.
+Gere o PAT em: **User Settings → Personal Access Tokens → New Token** (escopos: Work Items Read + Code Read).
 
-### 3. `testwise.config.json`
-
-Cada entrada em `repositories` usa **apenas** o campo `name`: o nome exato do repositório Git no Azure (o mesmo da URL `https://dev.azure.com/(org)/(projeto)/_git/(nome)`).
+## Configuração (`testwise.config.json`)
 
 ```json
 {
@@ -50,7 +40,7 @@ Cada entrada em `repositories` usa **apenas** o campo `name`: o nome exato do re
   "project": "${AZURE_PROJECT}",
   "pat": "${AZURE_PAT}",
   "repositories": [
-    { "name": "meu-repositorio-azure" }
+    { "name": "nome-do-repo-azure" }
   ],
   "template": {
     "language": "pt-BR",
@@ -68,23 +58,45 @@ Cada entrada em `repositories` usa **apenas** o campo `name`: o nome exato do re
 }
 ```
 
-- **`repositories[].name`**: nome do repo no Azure; nas tools `repo` e `gen` você passa esse mesmo nome em `repository`. O servidor percorre a árvore do repositório (extensões suportadas, tamanho máximo por arquivo conforme implementação).
+O campo `repositories[].name` deve ser o nome exato do repo no Azure (igual à URL `/_git/(nome)`).
 
-## Configurar o cliente MCP (ex.: Claude Desktop)
+## Adicionar o MCP ao cliente
 
-Arquivo de configuração:
+### Claude Code (por projeto)
+
+```bash
+claude mcp add --transport stdio --scope project testwise -- npx tsx C:/caminho/absoluto/testwise-mcp/src/index.ts
+```
+
+O caminho absoluto por exemplo pode ser `C:/*pasta*/*projeto*/testwise-mcp/src/index.ts`.
+
+Ou edite manualmente o `.mcp.json` do projeto com `cwd`:
+
+```json
+{
+  "mcpServers": {
+    "testwise": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": "C:/*pasta*/*projeto*/testwise-mcp/",
+      "env": {}
+    }
+  }
+}
+```
+
+### Claude Desktop
 
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-Exemplo de entrada:
 
 ```json
 {
   "mcpServers": {
     "testwise": {
       "command": "npx",
-      "args": ["tsx", "C:\\caminho\\absoluto\\para\\testwise-mcp\\src\\index.ts"],
+      "args": ["tsx", "C:\\caminho\\absoluto\\testwise-mcp\\src\\index.ts"],
       "env": {
         "AZURE_PAT": "seu_token",
         "AZURE_ORG": "https://dev.azure.com/sua-organizacao",
@@ -95,37 +107,32 @@ Exemplo de entrada:
 }
 ```
 
-Ajuste o caminho em `args` para a pasta real do projeto. Reinicie o cliente após salvar.
+Reinicie o cliente após salvar.
 
-No **Cursor**, configure o MCP nas definições do projeto (JSON de MCP servers) com o mesmo espírito: comando que executa `tsx src/index.ts` com o `cwd` no projeto e as variáveis `AZURE_*`.
-
-## Tools
+## Tools disponíveis
 
 | Tool | Descrição |
 |------|-----------|
 | `ping` | Confirma servidor ativo e config carregada |
 | `item` | Busca work item por ID |
-| `sprint` | Lista itens do sprint |
-| `repo` | Lê o repositório informado em `repository` (nome Azure) |
-| `search` | Busca palavra-chave nos repositórios da config |
-| `gen` | Monta prompt com `workItemId` e opcionalmente `repository` (um repo por chamada) |
+| `sprint` | Lista itens do sprint atual |
+| `repo` | Lê o repositório informado |
+| `search` | Busca palavra-chave nos repositórios |
+| `gen` | Gera prompt com `workItemId` e `repository` |
 | `save` | Exporta CTs para arquivo Markdown |
 | `post` | Comenta CTs no work item |
 
-## Exemplo no chat
-
-Peça algo como:
+## Uso
 
 ```text
-Use gen com workItemId 1234 e repository meu-repositorio-azure para gerar casos de teste em pt-BR.
+Use gen com workItemId 1234 e repository nome-do-repo para gerar casos de teste em pt-BR.
 ```
 
-## Formato sugerido dos CTs
+Formato gerado:
 
 ```markdown
 ---
 **CT-01 — Título**
-
 - **Pré-condição:** …
 - **Passos:** …
 - **Resultado esperado:** …
@@ -133,11 +140,9 @@ Use gen com workItemId 1234 e repository meu-repositorio-azure para gerar casos 
 ---
 ```
 
-## Scripts úteis (terminal)
+## Scripts
 
-| Comando | Função |
-|---------|--------|
-| `npm run ping` | Mesma checagem lógica do tool `ping` (sem cliente MCP) |
-| `npx tsx --env-file=.env scripts/run-gen.ts <id> [repo...]` | Gera o prompt localmente (útil para debug) |
-
-Prompts prontos para copiar e colar: pasta `examples/`.
+```bash
+npm run ping
+npx tsx --env-file=.env scripts/run-gen.ts <id> [repo...]
+```
